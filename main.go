@@ -1,6 +1,7 @@
-package main
+package chisel
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -13,57 +14,10 @@ import (
 	"time"
 
 	chclient "github.com/jpillora/chisel/client"
-	chserver "github.com/jpillora/chisel/server"
 	chshare "github.com/jpillora/chisel/share"
 	"github.com/jpillora/chisel/share/cos"
+	shellwords "github.com/mattn/go-shellwords"
 )
-
-var help = `
-  Usage: chisel [command] [--help]
-
-  Version: ` + chshare.BuildVersion + ` (` + runtime.Version() + `)
-
-  Commands:
-    server - runs chisel in server mode
-    client - runs chisel in client mode
-
-  Read more:
-    https://github.com/jpillora/chisel
-
-`
-
-func main() {
-
-	version := flag.Bool("version", false, "")
-	v := flag.Bool("v", false, "")
-	flag.Bool("help", false, "")
-	flag.Bool("h", false, "")
-	flag.Usage = func() {}
-	flag.Parse()
-
-	if *version || *v {
-		fmt.Println(chshare.BuildVersion)
-		os.Exit(0)
-	}
-
-	args := flag.Args()
-
-	subcmd := ""
-	if len(args) > 0 {
-		subcmd = args[0]
-		args = args[1:]
-	}
-
-	switch subcmd {
-	case "server":
-		server(args)
-	case "client":
-		client(args)
-	default:
-		fmt.Print(help)
-		os.Exit(0)
-	}
-}
 
 var commonHelp = `
     --pid Generate pid file in current working directory
@@ -90,157 +44,6 @@ func generatePidFile() {
 	if err := ioutil.WriteFile("chisel.pid", pid, 0644); err != nil {
 		log.Fatal(err)
 	}
-}
-
-var serverHelp = `
-  Usage: chisel server [options]
-
-  Options:
-
-    --host, Defines the HTTP listening host – the network interface
-    (defaults the environment variable HOST and falls back to 0.0.0.0).
-
-    --port, -p, Defines the HTTP listening port (defaults to the environment
-    variable PORT and fallsback to port 8080).
-
-    --key, An optional string to seed the generation of a ECDSA public
-    and private key pair. All communications will be secured using this
-    key pair. Share the subsequent fingerprint with clients to enable detection
-    of man-in-the-middle attacks (defaults to the CHISEL_KEY environment
-    variable, otherwise a new key is generate each run).
-
-    --authfile, An optional path to a users.json file. This file should
-    be an object with users defined like:
-      {
-        "<user:pass>": ["<addr-regex>","<addr-regex>"]
-      }
-    when <user> connects, their <pass> will be verified and then
-    each of the remote addresses will be compared against the list
-    of address regular expressions for a match. Addresses will
-    always come in the form "<remote-host>:<remote-port>" for normal remotes
-    and "R:<local-interface>:<local-port>" for reverse port forwarding
-    remotes. This file will be automatically reloaded on change.
-
-    --auth, An optional string representing a single user with full
-    access, in the form of <user:pass>. It is equivalent to creating an
-    authfile with {"<user:pass>": [""]}. If unset, it will use the
-    environment variable AUTH.
-
-    --keepalive, An optional keepalive interval. Since the underlying
-    transport is HTTP, in many instances we'll be traversing through
-    proxies, often these proxies will close idle connections. You must
-    specify a time with a unit, for example '5s' or '2m'. Defaults
-    to '25s' (set to 0s to disable).
-
-    --backend, Specifies another HTTP server to proxy requests to when
-    chisel receives a normal HTTP request. Useful for hiding chisel in
-    plain sight.
-
-    --socks5, Allow clients to access the internal SOCKS5 proxy. See
-    chisel client --help for more information.
-
-    --reverse, Allow clients to specify reverse port forwarding remotes
-    in addition to normal remotes.
-
-    --tls-key, Enables TLS and provides optional path to a PEM-encoded
-    TLS private key. When this flag is set, you must also set --tls-cert,
-    and you cannot set --tls-domain.
-
-    --tls-cert, Enables TLS and provides optional path to a PEM-encoded
-    TLS certificate. When this flag is set, you must also set --tls-key,
-    and you cannot set --tls-domain.
-
-    --tls-domain, Enables TLS and automatically acquires a TLS key and
-    certificate using LetsEncrypt. Setting --tls-domain requires port 443.
-    You may specify multiple --tls-domain flags to serve multiple domains.
-    The resulting files are cached in the "$HOME/.cache/chisel" directory.
-    You can modify this path by setting the CHISEL_LE_CACHE variable,
-    or disable caching by setting this variable to "-". You can optionally
-    provide a certificate notification email by setting CHISEL_LE_EMAIL.
-
-    --tls-ca, a path to a PEM encoded CA certificate bundle or a directory
-    holding multiple PEM encode CA certificate bundle files, which is used to 
-    validate client connections. The provided CA certificates will be used 
-    instead of the system roots. This is commonly used to implement mutual-TLS. 
-` + commonHelp
-
-func server(args []string) {
-
-	flags := flag.NewFlagSet("server", flag.ContinueOnError)
-
-	config := &chserver.Config{}
-	flags.StringVar(&config.KeySeed, "key", "", "")
-	flags.StringVar(&config.AuthFile, "authfile", "", "")
-	flags.StringVar(&config.Auth, "auth", "", "")
-	flags.DurationVar(&config.KeepAlive, "keepalive", 25*time.Second, "")
-	flags.StringVar(&config.Proxy, "proxy", "", "")
-	flags.StringVar(&config.Proxy, "backend", "", "")
-	flags.BoolVar(&config.Socks5, "socks5", false, "")
-	flags.BoolVar(&config.Reverse, "reverse", false, "")
-	flags.StringVar(&config.TLS.Key, "tls-key", "", "")
-	flags.StringVar(&config.TLS.Cert, "tls-cert", "", "")
-	flags.Var(multiFlag{&config.TLS.Domains}, "tls-domain", "")
-	flags.StringVar(&config.TLS.CA, "tls-ca", "", "")
-
-	host := flags.String("host", "", "")
-	p := flags.String("p", "", "")
-	port := flags.String("port", "", "")
-	pid := flags.Bool("pid", false, "")
-	verbose := flags.Bool("v", false, "")
-
-	flags.Usage = func() {
-		fmt.Print(serverHelp)
-		os.Exit(0)
-	}
-	flags.Parse(args)
-
-	if *host == "" {
-		*host = os.Getenv("HOST")
-	}
-	if *host == "" {
-		*host = "0.0.0.0"
-	}
-	if *port == "" {
-		*port = *p
-	}
-	if *port == "" {
-		*port = os.Getenv("PORT")
-	}
-	if *port == "" {
-		*port = "8080"
-	}
-	if config.KeySeed == "" {
-		config.KeySeed = os.Getenv("CHISEL_KEY")
-	}
-	s, err := chserver.NewServer(config)
-	if err != nil {
-		log.Fatal(err)
-	}
-	s.Debug = *verbose
-	if *pid {
-		generatePidFile()
-	}
-	go cos.GoStats()
-	ctx := cos.InterruptContext()
-	if err := s.StartContext(ctx, *host, *port); err != nil {
-		log.Fatal(err)
-	}
-	if err := s.Wait(); err != nil {
-		log.Fatal(err)
-	}
-}
-
-type multiFlag struct {
-	values *[]string
-}
-
-func (flag multiFlag) String() string {
-	return strings.Join(*flag.values, ", ")
-}
-
-func (flag multiFlag) Set(arg string) error {
-	*flag.values = append(*flag.values, arg)
-	return nil
 }
 
 type headerFlags struct {
@@ -389,7 +192,28 @@ var clientHelp = `
     enabled (mutual-TLS).
 ` + commonHelp
 
-func client(args []string) {
+func Start(str string) error {
+	var args []string
+	var err error
+	args, err = shellwords.Parse(str)
+	if err != nil {
+		return err
+	}
+	err = client(args)
+	return err
+}
+
+func Stop() error {
+	var err error
+	if c != nil {
+		return c.Close()
+	}
+	return err
+}
+
+var c *chclient.Client
+
+func client(args []string) error {
 	flags := flag.NewFlagSet("client", flag.ContinueOnError)
 	config := chclient.Config{Headers: http.Header{}}
 	flags.StringVar(&config.Fingerprint, "fingerprint", "", "")
@@ -415,7 +239,7 @@ func client(args []string) {
 	//pull out options, put back remaining args
 	args = flags.Args()
 	if len(args) < 2 {
-		log.Fatalf("A server and least one remote is required")
+		return errors.New("A server and least one remote is required")
 	}
 	config.Server = args[0]
 	config.Remotes = args[1:]
@@ -433,10 +257,12 @@ func client(args []string) {
 		config.TLS.ServerName = *sni
 	}
 
+	var err error
+
 	//ready
-	c, err := chclient.NewClient(&config)
+	c, err = chclient.NewClient(&config)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	c.Debug = *verbose
 	if *pid {
@@ -444,10 +270,11 @@ func client(args []string) {
 	}
 	go cos.GoStats()
 	ctx := cos.InterruptContext()
-	if err := c.Start(ctx); err != nil {
-		log.Fatal(err)
+	if err = c.Start(ctx); err != nil {
+		return err
 	}
-	if err := c.Wait(); err != nil {
-		log.Fatal(err)
+	if err = c.Wait(); err != nil {
+		return err
 	}
+	return err
 }
