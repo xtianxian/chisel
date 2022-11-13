@@ -1,4 +1,6 @@
-module github.com/xtianxian/chisel
+module github.com/jpillora/chisel
+
+replace github.com/jpillora/chisel => github.com/xtianxian/chisel
 
 go 1.13
 
