@@ -1,7 +1,5 @@
 module github.com/xtianxian/chisel
 
-replace github.com/jpillora/chisel => github.com/xtianxian/chisel
-
 go 1.13
 
 require (
