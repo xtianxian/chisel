@@ -1,4 +1,4 @@
-module github.com/jpillora/chisel
+module github.com/xtianxian/chisel
 
 replace github.com/jpillora/chisel => github.com/xtianxian/chisel
 
